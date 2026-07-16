@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Number Ascend</title>
+    
+    <link rel="stylesheet" href="https://pyscript.net/releases/2023.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2023.11.1/core.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            touch-action: manipulation; /* Prevents double-tap zooming on mobile */
+        }
+        h1 { margin-bottom: 5px; }
+        #message { height: 30px; margin-bottom: 20px; font-weight: bold; }
+        
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        /* Mobile-friendly touch targets */
+        .tile {
+            background-color: #ffffff;
+            color: #000000;
+            border: 2px solid #888888;
+            border-radius: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .tile:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Number Ascend</h1>
+    <div id="message">Loading game logic...</div>
+    <div id="game-board"></div>
+
+    <script type="py">
+        from pyscript import document
+        from pyodide.ffi import create_proxy
+        import random
+
+        # Game State
+        current_level = 1
+        max_level = 10
+        expected_num = 1
+
+        def handle_click(event):
+            global expected_num, current_level
+            
+            btn = event.target
+            num = int(btn.innerText)
+            
+            if num == expected_num:
+                # Correct tap: hide the button
+                btn.style.visibility = "hidden"
+                expected_num += 1
+                
+                # Check if level is complete
+                num_tiles = current_level + 2
+                if expected_num > num_tiles:
+                    if current_level == max_level:
+                        document.getElementById("message").innerText = "🏆 Game Over - You Win!"
+                        document.getElementById("game-board").innerHTML = ""
+                    else:
+                        current_level += 1
+                        start_level(current_level)
+            else:
+                # Wrong tap: reset level
+                document.getElementById("message").innerText = f"❌ Wrong! Tap {expected_num} first. Restarting..."
+                # Brief delay before restart could be added here, but instant reset is fine for simple UX
+                start_level(current_level)
+
+        # Pyodide requires us to proxy Python functions so JavaScript event listeners can use them
+        click_proxy = create_proxy(handle_click)
+
+        def start_level(level):
+            global expected_num
+            expected_num = 1
+            
+            board = document.getElementById("game-board")
+            board.innerHTML = "" # Clear previous tiles
+            document.getElementById("message").innerText = f"Level {level}: Tap numbers in order (1 to {level+2})"
+
+            num_tiles = level + 2
+            numbers = list(range(1, num_tiles + 1))
+            random.shuffle(numbers)
+
+            # Generate DOM elements dynamically via Python
+            for num in numbers:
+                btn = document.createElement("div")
+                btn.className = "tile"
+                btn.innerText = str(num)
+                btn.addEventListener("click", click_proxy)
+                board.appendChild(btn)
+
+        # Initialize the first level
+        start_level(current_level)
+    </script>
+</body>
+</html>
