@@ -18,10 +18,19 @@
             align-items: center;
             margin: 0;
             padding: 20px;
-            touch-action: manipulation; /* Prevents double-tap zooming on mobile */
+            touch-action: manipulation;
         }
         h1 { margin-bottom: 5px; }
-        #message { height: 30px; margin-bottom: 20px; font-weight: bold; }
+        #message { height: 30px; margin-bottom: 10px; font-weight: bold; text-align: center; }
+        
+        /* New styling for the timer */
+        #timer { 
+            height: 30px; 
+            margin-bottom: 20px; 
+            font-size: 24px; 
+            font-weight: bold; 
+            color: #ff5555; 
+        }
         
         #game-board {
             display: grid;
@@ -31,7 +40,6 @@
             max-width: 400px;
         }
         
-        /* Mobile-friendly touch targets */
         .tile {
             background-color: #ffffff;
             color: #000000;
@@ -46,19 +54,18 @@
             cursor: pointer;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
-        .tile:active {
-            transform: scale(0.95);
-        }
+        .tile:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
     <h1>Number Ascend</h1>
     <div id="message">Loading game logic...</div>
-    <div id="game-board"></div>
+    <div id="timer"></div> <div id="game-board"></div>
 
     <script type="py">
-        from pyscript import document
+        import asyncio
+        from pyscript import document, window
         from pyodide.ffi import create_proxy
         import random
 
@@ -66,57 +73,92 @@
         current_level = 1
         max_level = 10
         expected_num = 1
+        time_left = 5
+        timer_task = None # Will hold our background timer
 
+        # 1. The Asynchronous Timer Function
+        async def countdown():
+            global time_left, current_level
+            
+            while time_left > 0:
+                document.getElementById("timer").innerText = f"⏳ {time_left}s"
+                await asyncio.sleep(1) # Waits 1 second without freezing the browser
+                time_left -= 1
+                
+            # If the loop finishes, time ran out!
+            document.getElementById("timer").innerText = "⏳ 0s"
+            document.getElementById("message").innerText = f"⏰ Time's up! Restarting Level {current_level}..."
+            
+            # Wait 1.5 seconds so the player can read the message, then restart
+            await asyncio.sleep(1.5)
+            start_level(current_level)
+
+        # 2. Handling Player Taps
         def handle_click(event):
-            global expected_num, current_level
+            global expected_num, current_level, timer_task
             
             btn = event.target
             num = int(btn.innerText)
             
             if num == expected_num:
-                # Correct tap: hide the button
                 btn.style.visibility = "hidden"
                 expected_num += 1
                 
-                # Check if level is complete
                 num_tiles = current_level + 2
                 if expected_num > num_tiles:
+                    # Level Complete! Cancel the countdown timer.
+                    if timer_task:
+                        timer_task.cancel()
+                        
                     if current_level == max_level:
                         document.getElementById("message").innerText = "🏆 Game Over - You Win!"
+                        document.getElementById("timer").innerText = ""
                         document.getElementById("game-board").innerHTML = ""
                     else:
                         current_level += 1
                         start_level(current_level)
             else:
-                # Wrong tap: reset level
-                document.getElementById("message").innerText = f"❌ Wrong! Tap {expected_num} first. Restarting..."
-                # Brief delay before restart could be added here, but instant reset is fine for simple UX
-                start_level(current_level)
+                # Wrong tap! Cancel timer and restart.
+                if timer_task:
+                    timer_task.cancel()
+                
+                document.getElementById("message").innerText = f"❌ Wrong! Tap {expected_num} first."
+                # Use browser's setTimeout to delay the restart by 1.5 seconds
+                window.setTimeout(create_proxy(lambda: start_level(current_level)), 1500)
 
-        # Pyodide requires us to proxy Python functions so JavaScript event listeners can use them
         click_proxy = create_proxy(handle_click)
 
+        # 3. Setting up the Level
         def start_level(level):
-            global expected_num
-            expected_num = 1
+            global expected_num, time_left, timer_task
             
+            expected_num = 1
+            time_left = 5 # Reset timer to 5 seconds
+            
+            # If a timer is already running (from a previous level), stop it
+            if timer_task:
+                timer_task.cancel()
+                
             board = document.getElementById("game-board")
-            board.innerHTML = "" # Clear previous tiles
-            document.getElementById("message").innerText = f"Level {level}: Tap numbers in order (1 to {level+2})"
+            board.innerHTML = "" 
+            document.getElementById("message").innerText = f"Level {level}: Tap numbers in order"
+            document.getElementById("timer").innerText = f"⏳ {time_left}s"
 
             num_tiles = level + 2
             numbers = list(range(1, num_tiles + 1))
             random.shuffle(numbers)
 
-            # Generate DOM elements dynamically via Python
             for num in numbers:
                 btn = document.createElement("div")
                 btn.className = "tile"
                 btn.innerText = str(num)
                 btn.addEventListener("click", click_proxy)
                 board.appendChild(btn)
+                
+            # Start the background timer loop
+            timer_task = asyncio.ensure_future(countdown())
 
-        # Initialize the first level
+        # Initialize
         start_level(current_level)
     </script>
 </body>
